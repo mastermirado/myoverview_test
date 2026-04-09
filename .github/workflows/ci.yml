@@ -158,58 +158,58 @@ jobs:
           APP_ENV: test
 
   # ──────────────────────────────────────────────────────────
-  # JOB 2 — Tests PHPUnit (à activer quand les tests arrivent)
+  # JOB 2 — Tests PHPUnit
   # ──────────────────────────────────────────────────────────
-  #
-  # Ce job est conditionnel : il ne s'exécute que si le dossier
-  # tests/ existe dans le dépôt. Dès que vous ajoutez des tests,
-  # il s'activera automatiquement sans modifier ce fichier.
-  #
-  # Pour démarrer :
-  #   composer require --dev phpunit/phpunit symfony/test-pack
-  #   mkdir tests && touch tests/.gitkeep
-  #
-  # tests:
-  #   name: "PHPUnit test suite"
-  #   runs-on: ubuntu-latest
-  #   needs: ci
-  #
-  #   services:
-  #     redis:
-  #       image: redis:alpine
-  #       ports:
-  #         - 6379:6379
-  #       options: >-
-  #         --health-cmd "redis-cli ping"
-  #         --health-interval 5s
-  #         --health-timeout 3s
-  #         --health-retries 5
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - uses: shivammathur/setup-php@v2
-  #       with:
-  #         php-version: "8.4"
-  #         extensions: ${{ env.PHP_EXTENSIONS }}
-  #         coverage: xdebug   # ou pcov selon vos préférences
-  #
-  #     - name: Restore Composer cache
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: $(composer config cache-files-dir)
-  #         key: composer-8.4-${{ hashFiles('**/composer.lock') }}
-  #
-  #     - name: Install dependencies
-  #       run: composer install --no-interaction --prefer-dist --optimize-autoloader
-  #
-  #     - name: Prepare test env
-  #       run: |
-  #         echo "APP_ENV=test" >> .env.test.local
-  #         echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.test.local
-  #         echo "REDIS_URL=redis://localhost:6379" >> .env.test.local
-  #
-  #     - name: Run PHPUnit
-  #       run: php bin/phpunit --testdox
-  #       env:
-  #         APP_ENV: test
+  tests:
+    name: "PHPUnit test suite"
+    runs-on: ubuntu-latest
+    needs: ci
+
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Restore Composer cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-8.4-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            composer-8.4-
+            composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+
+      - name: Prepare test env
+        run: |
+          echo "APP_ENV=test" >> .env.test.local
+          echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.test.local
+          echo "REDIS_URL=redis://localhost:6379" >> .env.test.local
+
+      - name: Run PHPUnit
+        run: php bin/phpunit --testdox
+        env:
+          APP_ENV: test
