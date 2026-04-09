@@ -1,0 +1,215 @@
+# ============================================================
+# GitHub Actions — CI Pipeline
+# Symfony 7.4 LTS / PHP 8.4
+# ============================================================
+#
+# SECRETS GITHUB REQUIS
+# ─────────────────────
+# Aucun secret n'est requis pour le pipeline CI de base.
+#
+# Secrets à ajouter lorsque vous activerez les features suivantes :
+#
+#   ANTHROPIC_API_KEY
+#     Requis si les tests ou les commandes Symfony appellent
+#     l'API Anthropic (symfony/ai-anthropic-platform).
+#     Settings → Secrets and variables → Actions → New repository secret
+#
+#   APP_SECRET
+#     Requis si vous souhaitez tester en environnement proche
+#     de la production (actuellement le pipeline génère une
+#     valeur aléatoire suffisante pour les envs test/dev).
+#
+# Pour un futur job de déploiement :
+#   SSH_PRIVATE_KEY     — clé SSH vers le serveur cible
+#   DEPLOY_HOST         — hostname ou IP du serveur
+#   DEPLOY_USER         — utilisateur SSH
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  # PHP version cible — alignée sur le Dockerfile (php:8.4-fpm-alpine)
+  PHP_VERSION: "8.4"
+  # Extensions nécessaires (miroir du Dockerfile)
+  PHP_EXTENSIONS: intl, pdo_mysql, pdo_pgsql, opcache, gd, bcmath, exif, pcntl, zip, redis
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # JOB 1 — Qualité du code & bootstrap Symfony
+  # ──────────────────────────────────────────────────────────
+  ci:
+    name: "PHP ${{ matrix.php }} — Lint, Install, Cache warmup & PHPStan"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php:
+          - "8.4"
+
+    steps:
+      # 1. Checkout du code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Setup PHP avec les extensions identiques au Dockerfile
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          ini-values: opcache.enable_cli=1, memory_limit=512M
+          coverage: none
+        env:
+          # L'extension Redis est disponible via setup-php sans PECL supplémentaire
+          COMPOSER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Vérification de la syntaxe PHP (équivalent php -l récursif)
+      - name: Lint PHP syntax (php -l)
+        run: |
+          find src -name "*.php" -print0 \
+            | xargs -0 -n1 php -l \
+            | grep -v "^No syntax errors" || true
+          # Échec du step si une erreur de syntaxe est trouvée
+          find src -name "*.php" -print0 \
+            | xargs -0 -n1 php -l 2>&1 \
+            | grep -v "^No syntax errors" \
+            | grep -v "^$" \
+            | (! grep -q .) || { echo "Syntax errors found"; exit 1; }
+
+      # 4. Cache Composer (~/.composer/cache)
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          # Clé basée sur composer.lock pour invalidation précise
+          key: composer-${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            composer-${{ matrix.php }}-
+            composer-
+
+      # 5. Installation des dépendances Composer
+      - name: Install Composer dependencies
+        run: |
+          composer install \
+            --no-interaction \
+            --no-progress \
+            --prefer-dist \
+            --optimize-autoloader
+        env:
+          # Évite l'échec si COMPOSER_AUTH n'est pas défini
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+
+      # 6. Création du fichier .env.test.local minimal
+      #    (APP_SECRET est obligatoire pour cache:warmup)
+      - name: Prepare test environment
+        run: |
+          echo "APP_ENV=test" >> .env.test.local
+          echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.test.local
+          # Redis n'est pas démarré en CI — on désactive les sessions Redis si besoin
+          # echo "REDIS_URL=redis://localhost:6379" >> .env.test.local
+
+      # 7. Warmup du cache Symfony en environnement test
+      - name: Symfony cache:warmup (env=test)
+        run: php bin/console cache:warmup --env=test --no-debug
+        env:
+          APP_ENV: test
+
+      # 8. PHPStan — exécuté uniquement si phpstan.neon.dist est présent
+      #    (c'est le cas dans ce projet : phpstan/phpstan + phpstan-symfony sont
+      #     dans require-dev et phpstan.neon.dist est configuré niveau 5)
+      - name: Check if PHPStan config exists
+        id: phpstan-config
+        run: |
+          if [ -f phpstan.neon.dist ] || [ -f phpstan.neon ]; then
+            echo "present=true" >> $GITHUB_OUTPUT
+          else
+            echo "present=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: PHPStan static analysis
+        if: steps.phpstan-config.outputs.present == 'true'
+        run: |
+          # phpstan.neon.dist pointe vers var/cache/dev/ mais le cache:warmup
+          # ci-dessus a généré le container XML dans var/cache/test/.
+          # On surcharge le paramètre symfony.containerXmlPath via --define
+          # pour éviter de modifier phpstan.neon.dist.
+          CONTAINER_XML=$(ls var/cache/test/*KernelTestDebugContainer.xml 2>/dev/null \
+                          || ls var/cache/test/*Container.xml 2>/dev/null \
+                          | head -1)
+          php -d memory_limit=1G vendor/bin/phpstan analyse \
+            --configuration=phpstan.neon.dist \
+            --no-progress \
+            --error-format=github \
+            ${CONTAINER_XML:+"-d" "symfony.containerXmlPath=${CONTAINER_XML}"}
+        env:
+          APP_ENV: test
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2 — Tests PHPUnit (à activer quand les tests arrivent)
+  # ──────────────────────────────────────────────────────────
+  #
+  # Ce job est conditionnel : il ne s'exécute que si le dossier
+  # tests/ existe dans le dépôt. Dès que vous ajoutez des tests,
+  # il s'activera automatiquement sans modifier ce fichier.
+  #
+  # Pour démarrer :
+  #   composer require --dev phpunit/phpunit symfony/test-pack
+  #   mkdir tests && touch tests/.gitkeep
+  #
+  # tests:
+  #   name: "PHPUnit test suite"
+  #   runs-on: ubuntu-latest
+  #   needs: ci
+  #
+  #   services:
+  #     redis:
+  #       image: redis:alpine
+  #       ports:
+  #         - 6379:6379
+  #       options: >-
+  #         --health-cmd "redis-cli ping"
+  #         --health-interval 5s
+  #         --health-timeout 3s
+  #         --health-retries 5
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: shivammathur/setup-php@v2
+  #       with:
+  #         php-version: "8.4"
+  #         extensions: ${{ env.PHP_EXTENSIONS }}
+  #         coverage: xdebug   # ou pcov selon vos préférences
+  #
+  #     - name: Restore Composer cache
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: $(composer config cache-files-dir)
+  #         key: composer-8.4-${{ hashFiles('**/composer.lock') }}
+  #
+  #     - name: Install dependencies
+  #       run: composer install --no-interaction --prefer-dist --optimize-autoloader
+  #
+  #     - name: Prepare test env
+  #       run: |
+  #         echo "APP_ENV=test" >> .env.test.local
+  #         echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.test.local
+  #         echo "REDIS_URL=redis://localhost:6379" >> .env.test.local
+  #
+  #     - name: Run PHPUnit
+  #       run: php bin/phpunit --testdox
+  #       env:
+  #         APP_ENV: test
