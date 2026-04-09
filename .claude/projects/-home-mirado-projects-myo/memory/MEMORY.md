@@ -1,0 +1,1 @@
+- [Project purpose](project_purpose.md) — Myo is an experimentation sandbox for Symfony LTS features

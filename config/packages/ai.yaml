@@ -1,0 +1,9 @@
+ai:
+    platform:
+        anthropic:
+            api_key: '%env(ANTHROPIC_API_KEY)%'
+
+    agent:
+        default:
+            platform: 'ai.platform.anthropic'
+            model: 'claude-sonnet-4-20250514'
