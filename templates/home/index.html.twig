@@ -1,0 +1,12 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Tableau de bord{% endblock %}
+
+{% block body %}
+<div class="container" style="max-width:600px;margin-top:40px">
+    <div class="card">
+        <h1 style="text-align:left;margin-bottom:8px">Bonjour, {{ app.user.firstName ?: app.user.email }} 👋</h1>
+        <p style="color:#666;font-size:.9rem">Vous êtes connecté en tant que <strong>{{ app.user.email }}</strong>.</p>
+    </div>
+</div>
+{% endblock %}

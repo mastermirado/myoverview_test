@@ -37,9 +37,39 @@ services:
     networks:
       - php_app_network
 
+  db:
+    image: mysql:8.0
+    container_name: ${APP_REPOSITORY}-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-myo}
+      MYSQL_USER: ${MYSQL_USER:-myo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-myo}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - php_app_network
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ${APP_REPOSITORY}-phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER:-myo}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-myo}
+    ports:
+      - "8082:80"
+    depends_on:
+      - db
+    networks:
+      - php_app_network
+
 networks:
   php_app_network:
 
-
 volumes:
   redis_data:
+  mysql_data:
