@@ -6,10 +6,24 @@ use Symfony\Component\Panther\PantherTestCase;
 
 class AuthTest extends PantherTestCase
 {
+    private static function selenium(): array
+    {
+        return [
+            'browser' => PantherTestCase::SELENIUM,
+        ];
+    }
+
+    private static function seleniumOptions(): array
+    {
+        return [
+            'host' => $_SERVER['PANTHER_SELENIUM_HOST'] ?? 'http://selenium:4444/wd/hub',
+        ];
+    }
+
     public function testLoginPageLoads(): void
     {
-        $client = static::createPantherClient();
-        $crawler = $client->request('GET', '/login');
+        $client = static::createPantherClient(self::selenium(), [], self::seleniumOptions());
+        $client->request('GET', '/login');
 
         $this->assertSelectorExists('input[name="_username"]');
         $this->assertSelectorExists('input[name="_password"]');
@@ -18,7 +32,7 @@ class AuthTest extends PantherTestCase
 
     public function testRegisterPageLoads(): void
     {
-        $client = static::createPantherClient();
+        $client = static::createPantherClient(self::selenium(), [], self::seleniumOptions());
         $client->request('GET', '/register');
 
         $this->assertSelectorExists('form');
@@ -28,7 +42,7 @@ class AuthTest extends PantherTestCase
 
     public function testLoginWithInvalidCredentialsShowsError(): void
     {
-        $client = static::createPantherClient();
+        $client = static::createPantherClient(self::selenium(), [], self::seleniumOptions());
         $crawler = $client->request('GET', '/login');
 
         $form = $crawler->selectButton('Se connecter')->form([

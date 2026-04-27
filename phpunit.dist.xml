@@ -16,7 +16,9 @@
         <server name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
         <server name="PANTHER_NO_SANDBOX" value="1" />
-        <server name="PANTHER_CHROME_ARGUMENTS" value="--disable-dev-shm-usage --headless=new" />
+        <server name="PANTHER_CHROME_ARGUMENTS" value="--disable-dev-shm-usage" />
+        <server name="PANTHER_SELENIUM_HOST" value="http://selenium:4444/wd/hub" />
+        <server name="PANTHER_EXTERNAL_BASE_URI" value="http://web" />
     </php>
 
     <testsuites>

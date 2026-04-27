@@ -67,6 +67,16 @@ services:
     networks:
       - php_app_network
 
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: ${APP_REPOSITORY}-selenium
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    shm_size: 2gb
+    networks:
+      - php_app_network
+
 networks:
   php_app_network:
 
