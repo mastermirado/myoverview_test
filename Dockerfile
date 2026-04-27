@@ -60,6 +60,9 @@ RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS && \
 # Installation de Node.js et npm
 RUN apk add --no-cache nodejs npm
 
+# Installation de Chromium et ChromeDriver pour Panther
+RUN apk add --no-cache chromium chromium-chromedriver
+
 # Installation de Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
