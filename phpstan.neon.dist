@@ -9,3 +9,7 @@ parameters:
 
     symfony:
         containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+
+    ignoreErrors:
+        # Doctrine assigne les IDs via reflection — PHPStan ne le voit pas sans phpstan-doctrine
+        - '#Property App\\Entity\\[a-zA-Z]+::\$id \(.*\) is never assigned \w+ so it can be removed from the property type\.#'
